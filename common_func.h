@@ -1,3 +1,33 @@
+
+/*   example usage of FARAGE_COMMON_UNDEF_ALL when it has already been included before
+#ifdef FARAGE_COMMON_MODULE_FUNC
+    #ifndef REMOVE
+        #define FARAGE_COMMON_UNDEF_ALL
+        #include "common_func.h"
+        #define REMOVE
+        #include "common_func.h"
+    #endif
+#endif
+*/
+
+#ifdef FARAGE_COMMON_UNDEF_ALL
+    #undef FARAGE_COMMON_UNDEF_ALL
+    #undef FARAGE_COMMON_MODULE_FUNC
+    #undef SUBCALL
+    #undef REGSUBEX
+    #undef REGSUBEX_STD
+    #undef MAKEMENTION
+    #undef NOSPACE
+    #undef REMOVE
+    #undef REMOVEALL
+    #undef STRREPLACE
+    #undef STR2BOOL
+    #undef SPLITSTRING
+    #undef SPLITSTRINGANY
+    #undef RANDOMNEGATIVEEMOJI
+    #undef HEXIFY
+#else
+
 #ifndef FARAGE_COMMON_MODULE_FUNC
 #define FARAGE_COMMON_MODULE_FUNC
 
@@ -22,7 +52,7 @@ std::string regsubex(std::string subject, const rens::regex &re, const std::stri
     }
     if ((!matched) || (subject.size() > 0))
         ret += subject;
-    return ret;
+    return std::move(ret);
 }
 #elif defined REGSUBEX_STD
 std::string regsubex(std::string subject, const std::regex &re, const std::string &replace, subcall cb, const std::string &prefix = "", const std::string &suffix = "")
@@ -38,7 +68,7 @@ std::string regsubex(std::string subject, const std::regex &re, const std::strin
     }
     if ((!matched) || (subject.size() > 0))
         ret += subject;
-    return ret;
+    return std::move(ret);
 }
 #endif
 
@@ -281,6 +311,8 @@ std::string hexify(const std::string &in)
 
 
 
+
+#endif
 
 #endif
 

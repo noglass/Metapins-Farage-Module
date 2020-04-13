@@ -6,7 +6,7 @@ using namespace Farage;
 #define MAKEMENTION
 #include "common_func.h"
 
-#define VERSION "v0.0.8"
+#define VERSION "v0.1.0"
 
 extern "C" Info Module
 {
@@ -35,6 +35,20 @@ extern "C" int onModuleStart(Handle &handle, Global *global)
     handle.regChatCmd("cyclepins",&MetaPin::cyclePinsCmd,PIN,"Gimmie some fresh pins.");
     MetaPin::pins.open("metapins.ini");
     return 0;
+}
+
+extern "C" int onMessage(Handle& handle, Event event, void* message, void* nil, void* foo, void* bar)
+{
+    Message *msg = (Message*)message;
+    if ((msg->type == 6) && (msg->message_reference.message_id.size() > 0))
+    {
+        //sendMessage(msg->channel_id,makeMention(msg->author.id,msg->guild_id) + " has pinned a message https://discordapp.com/channels/" + msg->guild_id + '/' + msg->channel_id + '/' + msg->message_reference.message_id);
+        size_t change = MetaPin::pins.items(msg->channel_id);
+        MetaPin::pins(msg->channel_id,msg->message_reference.message_id) = "1";
+        if (change != MetaPin::pins.items(msg->channel_id))
+            MetaPin::pins.write("metapins.ini");
+    }
+    return PLUGIN_CONTINUE;
 }
 
 int MetaPin::pinCmd(Handle& handle, int argc, const std::string argv[], const Message& message)
