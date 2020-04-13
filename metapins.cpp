@@ -6,7 +6,7 @@ using namespace Farage;
 #define MAKEMENTION
 #include "common_func.h"
 
-#define VERSION "v0.1.0"
+#define VERSION "v0.1.2"
 
 extern "C" Info Module
 {
@@ -24,6 +24,11 @@ namespace MetaPin
     int addPinsCmd(Handle&,int,const std::string[],const Message&);
     int cyclePinsCmd(Handle&,int,const std::string[],const Message&);
     INIObject pins;
+    int deletePinned(Handle& handle, ReactHook* hook, const ServerMember& member, const Channel& channel, const std::string& messageID, const std::string& guildID, const Emoji& emoji)
+    {
+        deleteMessage(channel.id,messageID);
+        return PLUGIN_ERASE | PLUGIN_HANDLED;
+    }
 };
 
 extern "C" int onModuleStart(Handle &handle, Global *global)
@@ -42,11 +47,16 @@ extern "C" int onMessage(Handle& handle, Event event, void* message, void* nil, 
     Message *msg = (Message*)message;
     if ((msg->type == 6) && (msg->message_reference.message_id.size() > 0))
     {
-        //sendMessage(msg->channel_id,makeMention(msg->author.id,msg->guild_id) + " has pinned a message https://discordapp.com/channels/" + msg->guild_id + '/' + msg->channel_id + '/' + msg->message_reference.message_id);
-        size_t change = MetaPin::pins.items(msg->channel_id);
-        MetaPin::pins(msg->channel_id,msg->message_reference.message_id) = "1";
-        if (change != MetaPin::pins.items(msg->channel_id))
-            MetaPin::pins.write("metapins.ini");
+        consoleOut(msg->author.username + " has pinned a message https://discordapp.com/channels/" + msg->guild_id + '/' + msg->channel_id + '/' + msg->message_reference.message_id);
+        if (msg->author.id == recallGlobal()->self.id)
+            deleteMessage(msg->channel_id,msg->id);
+        else
+        {
+            size_t change = MetaPin::pins.items(msg->channel_id);
+            MetaPin::pins(msg->channel_id,msg->message_reference.message_id) = "1";
+            if (change != MetaPin::pins.items(msg->channel_id))
+                MetaPin::pins.write("metapins.ini");
+        }
     }
     return PLUGIN_CONTINUE;
 }
@@ -79,7 +89,9 @@ int MetaPin::pinCmd(Handle& handle, int argc, const std::string argv[], const Me
                 }
             }
             pinMessage(message.channel_id,argv[1]);
-            sendMessage(message.channel_id,makeMention(message.author.id,message.guild_id) + " has pinned a message https://discordapp.com/channels/" + message.guild_id + '/' + message.channel_id + '/' + argv[1]);
+            ObjectResponse<Message> resp = sendMessage(message.channel_id,makeMention(message.author.id,message.guild_id) + " has pinned a message https://discordapp.com/channels/" + message.guild_id + '/' + message.channel_id + '/' + argv[1]);
+            if (!resp.response.error())
+                handle.hookReactionMessage(resp.object.id,&MetaPin::deletePinned,0,resp.object.id,"❌",message.author.id);
         }
     }
     return PLUGIN_HANDLED;
@@ -102,7 +114,9 @@ int MetaPin::addPinsCmd(Handle& handle, int argc, const std::string argv[], cons
             MetaPin::pins(message.channel_id,it->id) = "1";
         }
         MetaPin::pins.write("metapins.ini");
-        sendMessage(message.channel_id,"Successfully stocked up on " + std::to_string(MetaPin::pins.items(message.channel_id)) + " pins!");
+        ObjectResponse<Message> resp = sendMessage(message.channel_id,"Successfully stocked up on " + std::to_string(MetaPin::pins.items(message.channel_id)) + " pins!");
+        if (!resp.response.error())
+            handle.hookReactionMessage(resp.object.id,&MetaPin::deletePinned,0,resp.object.id,"❌",message.author.id);
     }
     return PLUGIN_HANDLED;
 }
@@ -112,7 +126,11 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
     Global *global = recallGlobal();
     auto topic = MetaPin::pins.topic_it(message.channel_id);
     if (topic == MetaPin::pins.end())
-        sendMessage(message.channel_id,"There are no pins to cycle!");
+    {
+        ObjectResponse<Message> resp = sendMessage(message.channel_id,"There are no pins to cycle!");
+        if (!resp.response.error())
+            handle.hookReactionMessage(resp.object.id,&MetaPin::deletePinned,0,resp.object.id,"❌",message.author.id);
+    }
     else if (topic->items() < 51)
     {
         int count = 0;
@@ -130,11 +148,17 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
                 ++it;
         }
         if (count == 0)
-            sendMessage(message.channel_id,"There are not enough pins to cycle!");
+        {
+            ObjectResponse<Message> resp = sendMessage(message.channel_id,"There are not enough pins to cycle!");
+            if (!resp.response.error())
+                handle.hookReactionMessage(resp.object.id,&MetaPin::deletePinned,0,resp.object.id,"❌",message.author.id);
+        }
         else
         {
             MetaPin::pins.write("metapins.ini");
-            sendMessage(message.channel_id,"Repinned " + std::to_string(count) + " message(s)!");
+            ObjectResponse<Message> resp = sendMessage(message.channel_id,"Repinned " + std::to_string(count) + " message(s)!");
+            if (!resp.response.error())
+                handle.hookReactionMessage(resp.object.id,&MetaPin::deletePinned,0,resp.object.id,"❌",message.author.id);
         }
     }
     else
@@ -199,7 +223,9 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
             (*topic)(i) = "1";
         topic->insert_range(topic->begin(),top.begin(),top.end());
         MetaPin::pins.write("metapins.ini");
-        sendMessage(message.channel_id,"It has been done.");
+        ObjectResponse<Message> resp = sendMessage(message.channel_id,"It has been done.");
+        if (!resp.response.error())
+            handle.hookReactionMessage(resp.object.id,&MetaPin::deletePinned,0,resp.object.id,"❌",message.author.id);
     }
     return PLUGIN_HANDLED;
 }
