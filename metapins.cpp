@@ -6,7 +6,7 @@ using namespace Farage;
 #define MAKEMENTION
 #include "common_func.h"
 
-#define VERSION "v0.1.5"
+#define VERSION "v0.1.6"
 
 extern "C" Info Module
 {
@@ -21,6 +21,7 @@ extern "C" Info Module
 namespace MetaPin
 {
     int pinCmd(Handle&,int,const std::string[],const Message&);
+    int unpinCmd(Handle&,int,const std::string[],const Message&);
     int addPinsCmd(Handle&,int,const std::string[],const Message&);
     int cyclePinsCmd(Handle&,int,const std::string[],const Message&);
     INIObject pins;
@@ -51,6 +52,7 @@ extern "C" int onModuleStart(Handle &handle, Global *global)
     recallGlobal(global);
     handle.createGlobVar("metapin_version",VERSION,"MetaPins Version",GVAR_CONSTANT);
     handle.regChatCmd("pin",&MetaPin::pinCmd,PIN,"Pin a message forever.");
+    handle.regChatCmd("unpin",&MetaPin::unpinCmd,PIN,"Did I say forever? Just kidding!");
     handle.regChatCmd("addpins",&MetaPin::addPinsCmd,PIN,"Stock up on some pins.");
     handle.regChatCmd("cyclepins",&MetaPin::cyclePinsCmd,PIN,"Gimmie some fresh pins.");
     handle.hookReaction("pinHook",&MetaPin::pinReactHook,0,"📌");
@@ -89,6 +91,54 @@ int MetaPin::pinCmd(Handle& handle, int argc, const std::string argv[], const Me
             MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"Error: Cannot find the message `" + argv[1] + "`!");
         else
             addPin(handle,message.guild_id,message.channel_id,message.id,message.author.id);
+    }
+    return PLUGIN_HANDLED;
+}
+
+int MetaPin::unpinCmd(Handle& handle, int argc, const std::string argv[], const Message& message)
+{
+    Global *global = recallGlobal();
+    if (argc < 2)
+        sendMessage(message.channel_id,"Usage: `" + global->prefix(message.guild_id) + "unpin <message_id>`");
+    else
+    {
+        ObjectResponse<Message> response = getMessage(message.channel_id,argv[1]);
+        if (response.response.error())
+            MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"Error: Cannot find the message `" + argv[1] + "`!");
+        else
+        {
+            try
+            {
+                if (MetaPin::pins.find(message.channel_id,argv[1]) == "1")
+                    unpinMessage(message.channel_id,argv[1]);
+            } catch (const std::out_of_range& err)
+            {
+                MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"Error: That message isn't pinned!");
+                return PLUGIN_HANDLED;
+            }
+            MetaPin::pins.erase(message.channel_id,argv[1]);
+            auto topic = MetaPin::pins.topic_it(message.channel_id);
+            if (topic->items() > 49)
+            {
+                int found = 0;
+                for (int found = 0;found < 2;++found)
+                {
+                    for (auto it = topic->begin(), ite = topic->end();it != ite;++it)
+                    {
+                        if ((found) && (it->value == "0"))
+                        {
+                            pinMessage(message.channel_id,argv[1]);
+                            MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,makeMention(message.author.id,message.guild_id) + " has pinned a message https://discordapp.com/channels/" + message.guild_id + '/' + message.channel_id + '/' + argv[1]);
+                            break;
+                        }
+                        if ((!found) && (it->value == "1"))
+                            found = 1;
+                    }
+                }
+            }
+            MetaPin::pins.write("metapins.ini");
+            reactToID(message.channel_id,message.id,"%E2%9C%85");
+        }
     }
     return PLUGIN_HANDLED;
 }
