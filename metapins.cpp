@@ -6,7 +6,7 @@ using namespace Farage;
 #define MAKEMENTION
 #include "common_func.h"
 
-#define VERSION "v0.1.4"
+#define VERSION "v0.1.5"
 
 extern "C" Info Module
 {
@@ -37,8 +37,10 @@ namespace MetaPin
         if (global != nullptr)
         {
             if (global->getAdminFlags(guildID,member.user.id) & PIN)
+            {
                 addPin(handle,guildID,channel.id,messageID,member.user.id);
-            removeReaction(channel.id,messageID,emoji.encoded(),member.user.id);
+                removeReaction(channel.id,messageID,emoji.encoded(),member.user.id);
+            }
         }
         return PLUGIN_HANDLED;
     }
