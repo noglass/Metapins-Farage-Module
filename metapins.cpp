@@ -6,7 +6,7 @@ using namespace Farage;
 #define MAKEMENTION
 #include "common_func.h"
 
-#define VERSION "v0.1.6"
+#define VERSION "v0.2.0"
 
 extern "C" Info Module
 {
@@ -27,6 +27,7 @@ namespace MetaPin
     INIObject pins;
     void addPin(Handle& handle, const std::string& guildID, const std::string& channelID, const std::string& messageID, const std::string& userID);
     void setupDelMsg(Handle& handle, const std::string& userID, const std::string& channelID, const std::string& message);
+    int pinTimer(Handle& handle, Timer* timer, void* data);
     int deletePinned(Handle& handle, ReactHook* hook, const ServerMember& member, const Channel& channel, const std::string& messageID, const std::string& guildID, const Emoji& emoji)
     {
         deleteMessage(channel.id,messageID);
@@ -40,7 +41,7 @@ namespace MetaPin
             if (global->getAdminFlags(guildID,member.user.id) & PIN)
             {
                 addPin(handle,guildID,channel.id,messageID,member.user.id);
-                removeReaction(channel.id,messageID,emoji.encoded(),member.user.id);
+                //removeReaction(channel.id,messageID,emoji.encoded(),member.user.id);
             }
         }
         return PLUGIN_HANDLED;
@@ -90,7 +91,7 @@ int MetaPin::pinCmd(Handle& handle, int argc, const std::string argv[], const Me
         if (response.response.error())
             MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"Error: Cannot find the message `" + argv[1] + "`!");
         else
-            addPin(handle,message.guild_id,message.channel_id,message.id,message.author.id);
+            MetaPin::addPin(handle,message.guild_id,message.channel_id,argv[1],message.author.id);
     }
     return PLUGIN_HANDLED;
 }
@@ -109,26 +110,28 @@ int MetaPin::unpinCmd(Handle& handle, int argc, const std::string argv[], const 
         {
             try
             {
-                if (MetaPin::pins.find(message.channel_id,argv[1]) == "1")
-                    unpinMessage(message.channel_id,argv[1]);
+                unpinMessage(message.channel_id,argv[1]);
+                if (MetaPin::pins.find(message.channel_id,argv[1]).size() > 0)
+                    MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,makeMention(message.author.id,message.guild_id) + " has unpinned a message https://discordapp.com/channels/" + message.guild_id + '/' + message.channel_id + '/' + argv[1]);
+                MetaPin::pins.erase(message.channel_id,argv[1]);
             } catch (const std::out_of_range& err)
             {
+                MetaPin::pins.erase(message.channel_id,argv[1]);
                 MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"Error: That message isn't pinned!");
                 return PLUGIN_HANDLED;
             }
-            MetaPin::pins.erase(message.channel_id,argv[1]);
             auto topic = MetaPin::pins.topic_it(message.channel_id);
             if (topic->items() > 49)
             {
                 int found = 0;
-                for (int found = 0;found < 2;++found)
+                for (int found = 0;found < 3;++found)
                 {
                     for (auto it = topic->begin(), ite = topic->end();it != ite;++it)
                     {
                         if ((found) && (it->value == "0"))
                         {
-                            pinMessage(message.channel_id,argv[1]);
-                            MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,makeMention(message.author.id,message.guild_id) + " has pinned a message https://discordapp.com/channels/" + message.guild_id + '/' + message.channel_id + '/' + argv[1]);
+                            MetaPin::addPin(handle,message.guild_id,message.channel_id,it->item,global->self.id);
+                            found = 3;
                             break;
                         }
                         if ((!found) && (it->value == "1"))
@@ -167,6 +170,16 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
 {
     Global *global = recallGlobal();
     auto topic = MetaPin::pins.topic_it(message.channel_id);
+    int rotate = 10;
+    if (argc > 1)
+    {
+        if (std::isdigit(argv[1].at(0)))
+            rotate = std::stoi(argv[1]);
+        if (rotate > 25)
+            rotate = 25;
+        if (rotate < 1)
+            rotate = 10;
+    }
     if (topic == MetaPin::pins.end())
         MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"There are no pins to cycle!");
     else if (topic->items() < 51)
@@ -196,10 +209,10 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
     else
     {
         int need = topic->items();
-        if (need < 100)
-            need %= 50;
+        if (need < 50+rotate)
+            need %= rotate;
         else
-            need = 50;
+            need = rotate;
         int rem = need;
         std::vector<std::string> bottom;
         std::vector<INIObject::INIItem> top;
@@ -218,13 +231,15 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
             if (!rem)
                 break;
         }
+        int timer = 3;
         for (;it != topic->end();)
         {
             if (it->value == "0")
             {
                 --need;
                 //it->value = "1";
-                pinMessage(message.channel_id,it->item);
+                std::pair<std::string,std::string>* data = new std::pair<std::string,std::string>(message.channel_id,it->item);
+                handle.createTimer("pin",timer++,&MetaPin::pinTimer,(void*)data);
                 bottom.push_back(it->item);
                 it = topic->erase(it);
             }
@@ -241,7 +256,8 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
                 {
                     --need;
                     //it->value = "1";
-                    pinMessage(message.channel_id,it->item);
+                    std::pair<std::string,std::string>* data = new std::pair<std::string,std::string>(message.channel_id,it->item);
+                    handle.createTimer("pin",timer++,&MetaPin::pinTimer,(void*)data);
                     bottom.push_back(it->item);
                     it = topic->erase(it);
                 }
@@ -255,8 +271,16 @@ int MetaPin::cyclePinsCmd(Handle& handle, int argc, const std::string argv[], co
             (*topic)(i) = "1";
         topic->insert_range(topic->begin(),top.begin(),top.end());
         MetaPin::pins.write("metapins.ini");
-        MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"It has been done.");
+        MetaPin::setupDelMsg(handle,message.author.id,message.channel_id,"It shall be done.");
     }
+    return PLUGIN_HANDLED;
+}
+
+int MetaPin::pinTimer(Handle& handle, Timer* timer, void* data)
+{
+    std::pair<std::string,std::string>* pin = (std::pair<std::string,std::string>*)data;
+    pinMessage(pin->first,pin->second);
+    delete pin;
     return PLUGIN_HANDLED;
 }
 
@@ -270,6 +294,7 @@ void MetaPin::addPin(Handle& handle, const std::string& guildID, const std::stri
     MetaPin::pins(channelID,messageID) = "1";
     MetaPin::pins.write("metapins.ini");
     auto topic = MetaPin::pins.topic_it(channelID);
+    int seconds = 1;
     if (topic->items() > 50)
     {
         for (auto it = topic->begin(), ite = topic->end();it != ite;++it)
@@ -278,11 +303,13 @@ void MetaPin::addPin(Handle& handle, const std::string& guildID, const std::stri
             {
                 it->value = "0";
                 unpinMessage(channelID,it->item);
+                seconds = 4;
                 break;
             }
         }
     }
-    pinMessage(channelID,messageID);
+    std::pair<std::string,std::string>* data = new std::pair<std::string,std::string>(channelID,messageID);
+    handle.createTimer("pin",seconds,&MetaPin::pinTimer,(void*)data);
     MetaPin::setupDelMsg(handle,userID,channelID,makeMention(userID,guildID) + " has pinned a message https://discordapp.com/channels/" + guildID + '/' + channelID + '/' + messageID);
 }
 
